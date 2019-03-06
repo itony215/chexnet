@@ -15,16 +15,18 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 import torch.nn.functional as func
 
 from sklearn.metrics.ranking import roc_auc_score
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import confusion_matrix
 
 from DensenetModels import DenseNet121
 from DensenetModels import DenseNet169
 from DensenetModels import DenseNet201
-from DatasetGenerator import DatasetGenerator
+from ImageGenerator import ImageGenerator
 
 
 #-------------------------------------------------------------------------------- 
 
-class ChexnetTrainer ():
+class DensenetTrainer ():
 
     #---- Train the densenet network 
     #---- pathDirData - path to the directory that contains images
@@ -56,8 +58,10 @@ class ChexnetTrainer ():
         transformList = []
         transformList.append(transforms.RandomResizedCrop(transCrop))
         transformList.append(transforms.RandomHorizontalFlip())
+        transformList.append(transforms.RandomVerticalFlip())
+        transformList.append(transforms.RandomRotation(25))
         transformList.append(transforms.ToTensor())
-        transformList.append(normalize)      
+        transformList.append(normalize)
         transformSequence=transforms.Compose(transformList)
 
         #-------------------- SETTINGS: DATASET BUILDERS
@@ -68,11 +72,12 @@ class ChexnetTrainer ():
         dataLoaderVal = DataLoader(dataset=datasetVal, batch_size=trBatchSize, shuffle=False, num_workers=24, pin_memory=True)
         
         #-------------------- SETTINGS: OPTIMIZER & SCHEDULER
-        optimizer = optim.Adam (model.parameters(), lr=0.0001, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-5)
-        scheduler = ReduceLROnPlateau(optimizer, factor = 0.1, patience = 5, mode = 'min')
+        optimizer = optim.Adam (model.parameters(), lr=0.000001, betas=(0.9, 0.999), eps=1e-08, weight_decay=1e-6)
+        scheduler = ReduceLROnPlateau(optimizer, factor = 0.1, patience = 3, mode = 'min')
                 
         #-------------------- SETTINGS: LOSS
-        loss = torch.nn.BCELoss(size_average = True)
+        #loss = torch.nn.BCELoss(size_average = True)
+        loss = torch.nn.BCELoss(size_average=True)
         
         #---- Load checkpoint 
         if checkpoint != None:
@@ -90,9 +95,9 @@ class ChexnetTrainer ():
             timestampTime = time.strftime("%H%M%S")
             timestampDate = time.strftime("%d%m%Y")
             timestampSTART = timestampDate + '-' + timestampTime
-                         
-            ChexnetTrainer.epochTrain (model, dataLoaderTrain, optimizer, scheduler, trMaxEpoch, nnClassCount, loss)
-            lossVal, losstensor = ChexnetTrainer.epochVal (model, dataLoaderVal, optimizer, scheduler, trMaxEpoch, nnClassCount, loss)
+
+            DensenetTrainer.epochTrain (model, dataLoaderTrain, optimizer, scheduler, trMaxEpoch, nnClassCount, loss)
+            lossVal, losstensor = DensenetTrainer.epochVal (model, dataLoaderVal, optimizer, scheduler, trMaxEpoch, nnClassCount, loss)
             
             timestampTime = time.strftime("%H%M%S")
             timestampDate = time.strftime("%d%m%Y")
@@ -104,9 +109,13 @@ class ChexnetTrainer ():
                 lossMIN = lossVal    
                 torch.save({'epoch': epochID + 1, 'state_dict': model.state_dict(), 'best_loss': lossMIN, 'optimizer' : optimizer.state_dict()}, 'm-' + launchTimestamp + '.pth.tar')
                 print ('Epoch [' + str(epochID + 1) + '] [save] [' + timestampEND + '] loss= ' + str(lossVal))
+
+                pathModel = 'm-' + launchTimestamp + '.pth.tar'
+                DensenetTrainer.test(pathDirData, pathFileVal, pathModel, nnArchitecture, nnClassCount, nnIsTrained, 16,
+                                    transResize, transCrop, launchTimestamp)
             else:
                 print ('Epoch [' + str(epochID + 1) + '] [----] [' + timestampEND + '] loss= ' + str(lossVal))
-                     
+
     #-------------------------------------------------------------------------------- 
        
     def epochTrain (model, dataLoader, optimizer, scheduler, epochMax, classCount, loss):
@@ -130,7 +139,7 @@ class ChexnetTrainer ():
     #-------------------------------------------------------------------------------- 
         
     def epochVal (model, dataLoader, optimizer, scheduler, epochMax, classCount, loss):
-        
+
         model.eval ()
         
         lossVal = 0
@@ -149,12 +158,12 @@ class ChexnetTrainer ():
             losstensor = loss(varOutput, varTarget)
             losstensorMean += losstensor
             
-            lossVal += losstensor.data[0]
+            lossVal += losstensor.item()
             lossValNorm += 1
-            
+
         outLoss = lossVal / lossValNorm
         losstensorMean = losstensorMean / lossValNorm
-        
+
         return outLoss, losstensorMean
                
     #--------------------------------------------------------------------------------     
@@ -164,24 +173,42 @@ class ChexnetTrainer ():
     #---- dataPRED - predicted data
     #---- classCount - number of classes
     
-    def computeAUROC (dataGT, dataPRED, classCount):
+    def computeAUROC (dataGT, dataPRED, classCount, data):
         
         outAUROC = []
-        
+
         datanpGT = dataGT.cpu().numpy()
         datanpPRED = dataPRED.cpu().numpy()
         
         for i in range(classCount):
             outAUROC.append(roc_auc_score(datanpGT[:, i], datanpPRED[:, i]))
-            
-        return outAUROC
+
+        '''
+        f = open("out.txt", "w")
+        f.write('Ground truth:\n')
+        for gt in datanpGT:
+            f.write(str(gt[0])+' '+str(gt[1])+' '+str(gt[2])+' '+str(gt[3])+' '+str(gt[4])+' '+str(gt[5])+'\n')
+        f.write('Predict:\n')
+        for pd in datanpPRED:
+            f.write(str(pd[0])+' '+str(pd[1])+' '+str(pd[2])+' '+str(pd[3])+' '+str(pd[4])+' '+str(pd[5])+'\n')
+        f.write('Path:\n')
+        for i in range(len(data.listImagePaths)):
+            f.write(data.listImagePaths[i] + '\n')
+        f.flush()
+        f.closed
+        '''
+        true_class = np.argmax(datanpGT, 1)
+        predicted_class = np.argmax(datanpPRED, 1)
+        cm = confusion_matrix(true_class, predicted_class)
+
+        return outAUROC, cm
         
         
     #--------------------------------------------------------------------------------  
     
     #---- Test the trained network 
-    #---- pathDirData - path to the directory that contains images
-    #---- pathFileTrain - path to the file that contains image paths and label pairs (training set)
+    #---- images - images
+    #---- labels - label pairs (training set)
     #---- pathFileVal - path to the file that contains image path and label pairs (validation set)
     #---- nnArchitecture - model architecture 'DENSE-NET-121', 'DENSE-NET-169' or 'DENSE-NET-201'
     #---- nnIsTrained - if True, uses pre-trained version of the network (pre-trained on imagenet)
@@ -193,11 +220,10 @@ class ChexnetTrainer ():
     #---- launchTimestamp - date/time, used to assign unique name for the checkpoint file
     #---- checkpoint - if not None loads the model and continues training
     
-    def test (pathDirData, pathFileTest, pathModel, nnArchitecture, nnClassCount, nnIsTrained, trBatchSize, transResize, transCrop, launchTimeStamp):   
+    def test (images, labels, pathModel, nnArchitecture, nnClassCount, nnIsTrained, trBatchSize, transResize, transCrop, launchTimeStamp):
         
         
-        CLASS_NAMES = [ 'Atelectasis', 'Cardiomegaly', 'Effusion', 'Infiltration', 'Mass', 'Nodule', 'Pneumonia',
-                'Pneumothorax', 'Consolidation', 'Edema', 'Emphysema', 'Fibrosis', 'Pleural_Thickening', 'Hernia']
+        CLASS_NAMES = [ 'A', 'B', 'C', 'D', 'E', '']
         
         cudnn.benchmark = True
         
@@ -222,9 +248,9 @@ class ChexnetTrainer ():
         transformList.append(transforms.Lambda(lambda crops: torch.stack([normalize(crop) for crop in crops])))
         transformSequence=transforms.Compose(transformList)
         
-        datasetTest = DatasetGenerator(pathImageDirectory=pathDirData, pathDatasetFile=pathFileTest, transform=transformSequence)
+        datasetTest = ImageGenerator(images=images, labels=labels, transform=transformSequence)
         dataLoaderTest = DataLoader(dataset=datasetTest, batch_size=trBatchSize, num_workers=8, shuffle=False, pin_memory=True)
-        
+
         outGT = torch.FloatTensor().cuda()
         outPRED = torch.FloatTensor().cuda()
        
@@ -232,8 +258,8 @@ class ChexnetTrainer ():
         
         for i, (input, target) in enumerate(dataLoaderTest):
             
-            target = target.cuda()
-            outGT = torch.cat((outGT, target), 0)
+            #target = target.cuda()
+            #outGT = torch.cat((outGT, target), 0)
             
             bs, n_crops, c, h, w = input.size()
             
@@ -244,17 +270,21 @@ class ChexnetTrainer ():
             
             outPRED = torch.cat((outPRED, outMean.data), 0)
 
-        aurocIndividual = ChexnetTrainer.computeAUROC(outGT, outPRED, nnClassCount)
+        '''
+        aurocIndividual, cm = DensenetTrainer.computeAUROC(outGT, outPRED, nnClassCount, datasetTest)
         aurocMean = np.array(aurocIndividual).mean()
-        
+
         print ('AUROC mean ', aurocMean)
-        
+
         for i in range (0, len(aurocIndividual)):
             print (CLASS_NAMES[i], ' ', aurocIndividual[i])
+
+        print(cm)
+        '''
         
      
-        return
-#-------------------------------------------------------------------------------- 
+        return outPRED
+#--------------------------------------------------------------------------------
 
 
 

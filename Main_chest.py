@@ -3,7 +3,7 @@ import numpy as np
 import time
 import sys
 
-from ChexnetTrainer import ChexnetTrainer
+from DensenetTrainer import DensenetTrainer
 
 #-------------------------------------------------------------------------------- 
 
@@ -25,7 +25,7 @@ def runTrain():
     timestampLaunch = timestampDate + '-' + timestampTime
     
     #---- Path to the directory with images
-    pathDirData = './database'
+    pathDirData = '/media/hdd/images'
     
     #---- Paths to the files with training, validation and testing sets.
     #---- Each file should contains pairs [path to image, output vector]
@@ -38,42 +38,42 @@ def runTrain():
     #---- on imagenet, number of classes
     nnArchitecture = DENSENET121
     nnIsTrained = True
-    nnClassCount = 14
+    nnClassCount = 5
     
     #---- Training settings: batch size, maximum number of epochs
-    trBatchSize = 16
+    trBatchSize = 128
     trMaxEpoch = 100
     
     #---- Parameters related to image transforms: size of the down-scaled image, cropped image
-    imgtransResize = 256
+    imgtransResize = 224
     imgtransCrop = 224
         
     pathModel = 'm-' + timestampLaunch + '.pth.tar'
     
     print ('Training NN architecture = ', nnArchitecture)
-    ChexnetTrainer.train(pathDirData, pathFileTrain, pathFileVal, nnArchitecture, nnIsTrained, nnClassCount, trBatchSize, trMaxEpoch, imgtransResize, imgtransCrop, timestampLaunch, None)
+    DensenetTrainer.train(pathDirData, pathFileTrain, pathFileVal, nnArchitecture, nnIsTrained, nnClassCount, trBatchSize, trMaxEpoch, imgtransResize, imgtransCrop, timestampLaunch, None)
     
     print ('Testing the trained model')
-    ChexnetTrainer.test(pathDirData, pathFileTest, pathModel, nnArchitecture, nnClassCount, nnIsTrained, trBatchSize, imgtransResize, imgtransCrop, timestampLaunch)
+    DensenetTrainer.test(pathDirData, pathFileTest, pathModel, nnArchitecture, nnClassCount, nnIsTrained, trBatchSize, imgtransResize, imgtransCrop, timestampLaunch)
 
 #-------------------------------------------------------------------------------- 
 
 def runTest():
     
-    pathDirData = './database'
-    pathFileTest = './dataset/test_1.txt'
+    pathDirData = '/media/hdd/images'
+    pathFileTest = './dataset/train_1.txt'
     nnArchitecture = 'DENSE-NET-121'
     nnIsTrained = True
-    nnClassCount = 14
-    trBatchSize = 16
-    imgtransResize = 256
+    nnClassCount = 5
+    trBatchSize = 100
+    imgtransResize = 224
     imgtransCrop = 224
     
-    pathModel = './models/m-25012018-123527.pth.tar'
+    pathModel = './m-13122018-095903.pth.tar'
     
     timestampLaunch = ''
     
-    ChexnetTrainer.test(pathDirData, pathFileTest, pathModel, nnArchitecture, nnClassCount, nnIsTrained, trBatchSize, imgtransResize, imgtransCrop, timestampLaunch)
+    DensenetTrainer.test(pathDirData, pathFileTest, pathModel, nnArchitecture, nnClassCount, nnIsTrained, trBatchSize, imgtransResize, imgtransCrop, timestampLaunch)
 
 #-------------------------------------------------------------------------------- 
 
